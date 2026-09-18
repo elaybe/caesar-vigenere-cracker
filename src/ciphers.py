@@ -31,14 +31,14 @@ def vigenere_encrypt(plaintext: str, key: str) -> str:
     Encrypts plaintext using the Vigenère cipher with a given keyword.
     """
     ciphertext = []
-    key = key.upper()
+    key = key.upper() #MATH
     key_index = 0
-    
+
     for char in plaintext:
         if char.isalpha():
             start = ord('A') if char.isupper() else ord('a')
             shift = ord(key[key_index % len(key)]) - ord('A')
-            shifted_char = chr((ord(char) - start + shift) % 26 + start)
+            shifted_char =  chr((ord(char) - start + shift) % 26 + start)
             ciphertext.append(shifted_char)
             key_index += 1
         else:

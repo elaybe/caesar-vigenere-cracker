@@ -1,6 +1,6 @@
 from collections import Counter
 from typing import Tuple
-from ciphers import caesar_decrypt, vigenere_decrypt
+from .ciphers import caesar_decrypt, vigenere_decrypt
 
 # Approximate frequency distribution of letters in the English language
 ENGLISH_FREQ = {
@@ -74,3 +74,19 @@ def break_vigenere(ciphertext: str, key_length: int) -> Tuple[str, str]:
     decrypted_text = vigenere_decrypt(ciphertext, recovered_key)
 
     return recovered_key, decrypted_text
+
+def calculate_ic(text: str) -> float:
+    """
+    Computes the Index of Coincidence (IC) for a given text string.
+    English text averages ~0.067, while uniform/random distribution is ~0.0385.
+    """
+    clean_text = [char.upper() for char in text if char.isalpha()]
+    n = len(clean_text)
+    if n <= 1:
+        return 0.0
+
+    counts = Counter(clean_text)
+    numerator = sum(count * (count - 1) for count in counts.values())
+    denominator = n * (n - 1)
+
+    return numerator / denominator
