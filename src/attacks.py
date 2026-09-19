@@ -1,5 +1,5 @@
 from collections import Counter
-from typing import Tuple
+from typing import Tuple, Optional
 from .ciphers import caesar_decrypt, vigenere_decrypt
 
 # Approximate frequency distribution of letters in the English language
@@ -30,50 +30,34 @@ def score_text(text: str) -> float:
 
 
 def break_caesar(ciphertext: str) -> Tuple[int, str]:
-    """
-    Breaks a Caesar cipher using brute-force search across all 26 possible shifts 
-    and selects the shift with the highest English frequency score.
-    
-    Returns:
-        Tuple[int, str]: (best_shift, decrypted_plaintext)
-    """
     best_shift = 0
-    best_score = -1.0
+    best_score = -float("inf")
     best_plaintext = ""
+
+    clean_text = [c.upper() for c in ciphertext if c.isalpha()]
+    n = len(clean_text)
+    if n == 0:
+        return 0, ciphertext
 
     for shift in range(26):
         decrypted = caesar_decrypt(ciphertext, shift)
-        current_score = score_text(decrypted)
+        dec_clean = [c.upper() for c in decrypted if c.isalpha()]
+        counts = Counter(dec_clean)
+        
+        # التقييم الترددي مع تدقيق الأوزان للحروف النادرة
+        score = sum((counts.get(letter, 0) / n) * ENGLISH_FREQ[letter] for letter in ENGLISH_FREQ)
+        
+        # جزاء إضافي إذا ظهرت حروف نادرة بنسب مرتفعة غير منطقية في عينة صغيرة
+        rare_penalty = sum(counts.get(rare, 0) for rare in ['Z', 'Q', 'X', 'J']) * 0.005
+        score -= rare_penalty
 
-        if current_score > best_score:
-            best_score = current_score
+        if score > best_score:
+            best_score = score
             best_shift = shift
             best_plaintext = decrypted
 
     return best_shift, best_plaintext
 
-
-def break_vigenere(ciphertext: str, key_length: int) -> Tuple[str, str]:
-    """
-    Breaks a Vigenere cipher given a known key length by slicing the ciphertext 
-    into N independent Caesar ciphers and cracking each position individually.
-    
-    Returns:
-        Tuple[str, str]: (recovered_key, decrypted_plaintext)
-    """
-    clean_text = [c.upper() for c in ciphertext if c.isalpha()]
-    recovered_key_chars = []
-
-    for i in range(key_length):
-        # Extract the slice encrypted by the same key character position
-        slice_text = "".join(clean_text[i::key_length])
-        best_shift, _ = break_caesar(slice_text)
-        recovered_key_chars.append(chr(best_shift + ord('A')))
-
-    recovered_key = "".join(recovered_key_chars)
-    decrypted_text = vigenere_decrypt(ciphertext, recovered_key)
-
-    return recovered_key, decrypted_text
 
 def calculate_ic(text: str) -> float:
     """
@@ -90,3 +74,66 @@ def calculate_ic(text: str) -> float:
     denominator = n * (n - 1)
 
     return numerator / denominator
+
+
+def find_key_length_ic(ciphertext: str, max_key_length: int = 12) -> int:
+    """
+    Estimates the unknown Vigenere key length by evaluating the average Index 
+    of Coincidence across coset slices for candidate lengths up to max_key_length.
+    Selects the length whose average IC is closest to standard English (~0.067).
+    """
+    clean_text = [c.upper() for c in ciphertext if c.isalpha()]
+    if len(clean_text) < 2:
+        return 1
+
+    best_length = 1
+    best_diff = float("inf")
+    target_ic = 0.067
+
+    # حصر البحث في نطاق منطقي لتجنب الوقوع في مضاعفات الطول (مثل 16 بدلاً من 8)
+    limit = min(max_key_length, len(clean_text) // 4)
+    if limit < 1:
+        limit = 1
+
+    for candidate_len in range(1, limit + 1):
+        coset_ics = []
+        for i in range(candidate_len):
+            slice_text = "".join(clean_text[i::candidate_len])
+            if len(slice_text) > 1:
+                coset_ics.append(calculate_ic(slice_text))
+
+        if coset_ics:
+            avg_ic = sum(coset_ics) / len(coset_ics)
+            diff = abs(avg_ic - target_ic)
+            # نفضل الطول الأصغر عند تقارب الفروق لتجنب مضاعفات الدورة
+            if diff < best_diff and (diff < 0.015 or best_diff > 0.02):
+                best_diff = diff
+                best_length = candidate_len
+
+    return best_length
+
+
+def break_vigenere(ciphertext: str, key_length: Optional[int] = None) -> Tuple[str, str]:
+    """
+    Breaks a Vigenere cipher without prior knowledge of the key.
+    If key_length is not provided, it is automatically derived via IC analysis.
+    The ciphertext is sliced into N independent Caesar streams and cracked individually.
+    
+    Returns:
+        Tuple[str, str]: (recovered_key, decrypted_plaintext)
+    """
+    if key_length is None or key_length <= 0:
+        key_length = find_key_length_ic(ciphertext, max_key_length=12)
+
+    clean_text = [c.upper() for c in ciphertext if c.isalpha()]
+    recovered_key_chars = []
+
+    for i in range(key_length):
+        slice_text = "".join(clean_text[i::key_length])
+        best_shift, _ = break_caesar(slice_text)
+        recovered_key_chars.append(chr(best_shift + ord('A')))
+
+    recovered_key = "".join(recovered_key_chars)
+    decrypted_text = vigenere_decrypt(ciphertext, recovered_key)
+
+    return recovered_key, decrypted_text
